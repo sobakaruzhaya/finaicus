@@ -1,0 +1,6 @@
+requests
+fastapi
+python-dotenv
+httpx
+uvicorn
+streamlit
