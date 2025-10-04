@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Генерация submission.csv с использованием твоего промпта и OpenRouter API.
+Генерация submission.csv с использованием OpenRouter API и кастомного промпта.
 
 Использование:
     python scripts/generate_submission.py --test test.csv --output submission.csv
@@ -16,113 +16,76 @@ import click
 import httpx
 from dotenv import load_dotenv
 
-
 load_dotenv()
 
-
 SYSTEM_PROMPT = """
-Ты — AI-ассистент трейдера, интегрированный с Finam TradeAPI через Python-клиент. Твоё имя - FINAICUS
-
-Твоя задача — помочь пользователю, **возвращая вызов метода клиента**, а не HTTP-запрос.
-
-### 🔧 Формат ответа (ОБЯЗАТЕЛЬНО!):
-
-Если нужен API-запрос, ответ должен содержать **ровно две строки**:
+Ты — AI-ассистент трейдера, интегрированный с Finam TradeAPI через Python-клиент. 
+Твоя задача — возвращать вызов метода клиента строго в формате:
 
 API_CALL: <название_метода>
 PARAMS: {"ключ": "значение", ...}
 
-📚 Доступные методы и их параметры:
-
-- `get_quote(symbol: str)` — текущая котировка
-- `get_orderbook(symbol: str, depth: int = 10)` — стакан
-- `get_candles(symbol: str, timeframe: str = "D", start: str | None = None, end: str | None = None)` — свечи
-- `get_account(account_id: str)` — информация о счёте (но ты НЕ должен указывать account_id в PARAMS!)
-- `get_orders(account_id: str)` — ордера (account_id не указывай!)
-- `get_order(account_id: str, order_id: str)` — конкретный ордер (указывай только order_id)
-- `create_order(account_id: str, order_ dict)` — создать ордер (передавай только order_data!)
-- `cancel_order(account_id: str, order_id: str)` — отменить ордер (указывай только order_id)
-- `get_trades(account_id: str, start: str | None = None, end: str | None = None)` — сделки
-- `get_positions(account_id: str)` — позиции
-
-
-
-> ⚠️ ВАЖНО:
-> - **Никогда не передавай `account_id` в `PARAMS`** — он будет добавлен автоматически.
-> - Для `create_order` передавай только тело ордера: `{"symbol": "...", "side": "buy", "type": "limit", "quantity": ..., "price": ...}`
-> - Все строки — в двойных кавычках, как в JSON.
-> - Если вопрос не требует API — отвечай напрямую, без блока `API_CALL`.
-> - Биржа MISX
-> - сейчас дата 4.10.2025
-> - start_time=2025-01-01T00:00:00Z&interval.end_time=2025-03-15T00:00:00Z - формат времени
-> - Ты МОЖЕШЬ давать рекомендации
-
-
-TIME_FRAME_UNSPECIFIED	0	Таймфрейм не указан
-TIME_FRAME_M1	1	1 минута. Глубина данных 7 дней.
-TIME_FRAME_M5	5	5 минут. Глубина данных 30 дней.
-TIME_FRAME_M15	9	15 минут. Глубина данных 30 дней.
-TIME_FRAME_M30	11	30 минут. Глубина данных 30 дней.
-TIME_FRAME_H1	12	1 час. Глубина данных 30 дней.
-TIME_FRAME_H2	13	2 часа. Глубина данных 30 дней.
-TIME_FRAME_H4	15	4 часа. Глубина данных 30 дней.
-TIME_FRAME_H8	17	8 часов. Глубина данных 30 дней.
-TIME_FRAME_D	19	День. Глубина данных 365 дней.
-TIME_FRAME_W	20	Неделя. Глубина данных 365*5 дней.
-TIME_FRAME_MN	21	Месяц. Глубина данных 365*5 дней.
-TIME_FRAME_QR	22	Квартал. Глубина данных 365*5 дней.
-
-
-
-### 🗣️ Примеры:
-
-
-**Пользователь:** Изменение цены Сбера?  
-**Ты:**  
-API_CALL: get_candles  
-PARAMS: {"symbol": "SBER@MISX", "timeframe": "TIME_FRAME_D", "start": "2025-01-01T00:00:00Z", "end": "2025-10-04T00:00:00Z"}
-
-**Пользователь:** Какая цена у Сбербанка?  
-**Ты:**  
-API_CALL: get_quote
-PARAMS: {"symbol": "SBER@MISX"}
-
-**Пользователь:** Покажи мои ордера.  
-**Ты:**  
-API_CALL: get_orders
-PARAMS: {}
-
-**Пользователь:** Купи  акций Газпрома по 240 руб.  
-**Ты:**  
-
-API_CALL: create_order
-PARAMS: {
-                "symbol": "GAZP@MISX",
-                "quantity": {
-                    "value": "10.0"
-                },
-                "side": "SIDE_SELL",
-                "type": "ORDER_TYPE_LIMIT",
-                "timeInForce": "TIME_IN_FORCE_DAY",
-                "limitPrice": {
-                    "value": "240"
-                },
-                "stopCondition": "STOP_CONDITION_UNSPECIFIED",
-                "legs": [],
-                "clientOrderId": "test005"
-}
-
-
-**Пользователь:** Что такое спред?  
-**Ты:**  
-Спред — это разница между лучшей ценой покупки (bid) и продажи (ask). Чем он меньше, тем выше ликвидность актива.
 
 ---
 
-Отвечай на русском, будь точным и полезным.
+## 📚 Важные факты из документации (REST API Finam)
 
-        
-        """
+### Подключение и авторизация  
+- Все запросы идут к базовому пути REST API Finam. ([tradeapi.finam.ru](https://tradeapi.finam.ru/docs/guides/rest/))  
+- Токен / авторизация управляется на стороне клиента / HTTP-заголовков (вне твоей ответственности).  
+
+### Счета (Accounts)  
+- `/accounts` — информация по счетам.  
+- `/accounts/{account_id}` — данные по конкретному счету.  
+
+### Инструменты (Instruments)  
+- `/instruments` — список инструментов / фильтрация.  
+- `/instruments/{symbol}/quotes/latest` — котировка по инструменту.  
+- `/instruments/{symbol}/orderbook` — стакан заявок.  
+- `/instruments/{symbol}/bars` — исторические данные (свечи) / бары.  
+
+### Заявки и ордера (Orders / Trades)  
+- `/accounts/{account_id}/orders` — все заявки по счёту.  
+- `/accounts/{account_id}/orders/{order_id}` — конкретная заявка.  
+- `/accounts/{account_id}/trades` — сделки по счёту (с возможностью фильтрации по времени)  
+- Отмена заявки: `DELETE /accounts/{account_id}/orders/{order_id}`  
+- Создать заявку: `POST /accounts/{account_id}/orders`  
+
+---
+
+📌 Доступные методы:
+- get_quote(symbol: str)
+- get_orderbook(symbol: str, depth: int = 10)
+- get_candles(symbol: str, timeframe: str = "D", start: str | None = None, end: str | None = None)
+- get_account(account_id: str) → account_id НЕ передавать
+- get_orders(account_id: str)
+- get_order(account_id: str, order_id: str) → только order_id
+- create_order(account_id: str, order_data)
+- cancel_order(account_id: str, order_id: str)
+- get_trades(account_id: str, start: str | None = None, end: str | None = None)
+- get_positions(account_id: str)
+
+⚠️ Правила:
+- Никогда не передавай account_id в PARAMS — он добавляется автоматически.
+- Если метод неочевиден, выбери ближайший по смыслу (например: цена → get_quote, история → get_candles, заявки → get_orders, позиции → get_positions).
+- Никогда не придумывай неизвестных методов и не используй пустые вызовы.
+- Все строки — только в JSON-формате с двойными кавычками.
+- Биржа: MISX
+- Сегодня: 2025-10-04
+- Формат времени: 2025-01-01T00:00:00Z
+
+Примеры:
+
+Пользователь: Какая цена у Сбербанка?
+AI:
+API_CALL: get_quote
+PARAMS: {"symbol": "SBER@MISX"}
+
+Пользователь: Изменение цены Сбера с января?
+AI:
+API_CALL: get_candles
+PARAMS: {"symbol": "SBER@MISX", "timeframe": "TIME_FRAME_D", "start": "2025-01-01T00:00:00Z", "end": "2025-10-04T00:00:00Z"}
+"""
 
 METHOD_TO_HTTP = {
     "get_quote": ("GET", "/v1/instruments/{symbol}/quotes/latest"),
@@ -154,7 +117,7 @@ def call_openrouter(messages: List[Dict[str, str]], model: str = "openai/gpt-4o-
         "model": model,
         "messages": messages,
         "temperature": 0.0,
-        "max_tokens": 256,
+        "max_tokens": 128, 
     }
 
     with httpx.Client(timeout=30.0) as client:
@@ -189,15 +152,11 @@ def extract_api_call(text: str):
 
 
 def convert_to_http_request(method_name: str, params: dict, account_id: str) -> tuple[str, str]:
-    """Преобразует вызов метода в HTTP-запрос в формате 'GET /path?query'"""
     if method_name not in METHOD_TO_HTTP:
-        return "GET", "/v1/assets"
+        return "GET", "/v1/instruments"
 
     http_method, path_template = METHOD_TO_HTTP[method_name]
-
-
     path = path_template
-
 
     if "{symbol}" in path and "symbol" in params:
         path = path.replace("{symbol}", params["symbol"])
@@ -228,8 +187,21 @@ def convert_to_http_request(method_name: str, params: dict, account_id: str) -> 
     return http_method, path
 
 
+def smart_fallback(question: str) -> tuple[str, str]:
+    q = question.lower()
+    if any(w in q for w in ["цена", "котировка", "quote"]):
+        return "GET", "/v1/instruments/SBER@MISX/quotes/latest"
+    if any(w in q for w in ["свеч", "динамика", "истор", "график"]):
+        return "GET", "/v1/instruments/SBER@MISX/bars?tf=TIME_FRAME_D"
+    if any(w in q for w in ["ордер", "заявк"]):
+        return "GET", "/v1/accounts/{account_id}/orders"
+    if any(w in q for w in ["позици", "portfolio"]):
+        return "GET", "/v1/accounts/{account_id}"
+    return "GET", "/v1/instruments"
+
+
 def process_question(uid: str, question: str) -> tuple[str, str]:
-    """Возвращает (http_method, request_path) для вопроса, используя uid как account_id"""
+    """Возвращает (http_method, request_path) для вопроса"""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": question},
@@ -245,22 +217,20 @@ def process_question(uid: str, question: str) -> tuple[str, str]:
             http_method, request_path = convert_to_http_request(method_name, params, account_id=uid)
             return http_method, request_path
         else:
-   
-            return "GET", "/v1/assets"
+            return smart_fallback(question)
 
     except Exception as e:
         print(f"⚠️ Ошибка для вопроса '{question[:50]}...': {e}", file=sys.stderr)
-        return "GET", "/v1/assets"
+        return smart_fallback(question)
 
 
 @click.command()
 @click.option("--test", "-t", type=click.Path(exists=True), default="test.csv", help="Путь к test.csv")
 @click.option("--output", "-o", type=click.Path(), default="submission.csv", help="Путь к submission.csv")
 def main(test: str, output: str):
-    """Генерация submission.csv с использованием твоего промпта"""
+    """Генерация submission.csv"""
     test_path = Path(test)
     output_path = Path(output)
-
 
     questions = []
     with open(test_path, encoding="utf-8") as f:
@@ -270,7 +240,6 @@ def main(test: str, output: str):
 
     print(f"Загружено {len(questions)} вопросов из {test_path}")
 
-
     results = []
     for item in questions:
         uid = item["uid"]
@@ -278,7 +247,6 @@ def main(test: str, output: str):
         http_method, request_path = process_question(uid, question)
         results.append({"uid": uid, "type": http_method, "request": request_path})
         print(f"✅ {uid}: {http_method} {request_path}")
-
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8", newline="") as f:
