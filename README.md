@@ -11,3 +11,5 @@ pip install -r requirements.txt
 4. запустите backend/main.py
 5. запустите frontend/app.py с помощью команды streamlit run app.py
    
+# Демонстрация работы
+![Демонстрация работы](demo/output.mp4)
