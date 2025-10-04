@@ -34,7 +34,7 @@ class FinamAPIClient:
                 "Content-Type": "application/json",
             })
 
-    def execute_request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
+    def execute_request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]: 
         """
         Выполнить HTTP запрос к Finam TradeAPI
 
@@ -55,7 +55,7 @@ class FinamAPIClient:
             response = self.session.request(method, url, timeout=30, **kwargs)
             response.raise_for_status()
 
-            # Если ответ пустой (например, для DELETE)
+
             if not response.content:
                 return {"status": "success", "message": "Operation completed"}
 
@@ -76,7 +76,7 @@ class FinamAPIClient:
         except Exception as e:
             return {"error": str(e), "type": type(e).__name__}
 
-    # Удобные методы для частых операций
+
 
     def get_quote(self, symbol: str) -> dict[str, Any]:
         """Получить текущую котировку инструмента"""
@@ -130,7 +130,6 @@ class FinamAPIClient:
 
     def get_positions(self, account_id: str) -> dict[str, Any]:
         """Получить открытые позиции"""
-        # Позиции обычно включены в ответ get_account
         return self.execute_request("GET", f"/v1/accounts/{account_id}")
 
     def get_session_details(self) -> dict[str, Any]:

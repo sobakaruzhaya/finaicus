@@ -4,3 +4,4 @@ python-dotenv
 httpx
 uvicorn
 streamlit
+click

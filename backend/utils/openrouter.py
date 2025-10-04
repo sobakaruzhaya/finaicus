@@ -20,7 +20,7 @@ def call_llm(messages: List[Dict[str, str]], temperature: float = 0.7) -> Dict[s
 
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://github.com/your-username/your-project",  # обязательно для OpenRouter
+        "HTTP-Referer": "https://github.com/your-username/your-project",  
         "X-Title": "Trading Assistant",
         "Content-Type": "application/json",
     }
